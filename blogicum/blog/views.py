@@ -1,52 +1,43 @@
-from typing import Any
-from django.db.models.query import QuerySet
-from django.shortcuts import render, get_object_or_404, get_list_or_404
-from django.views.generic import TemplateView, ListView, DetailView
+from django.http import Http404
+from django.shortcuts import render, get_object_or_404
 from .models import Post, Category
-import datetime as dt
+from django.utils import timezone
 
 
-class HomePage(ListView):
-    template_name = "blog/index.html"
-
-    def get_queryset(self):
-        queryset = Post.objects.filter(
-            is_published=True,
-            category__is_published=True,
-            pub_date__lte=dt.datetime.now()
-        ).order_by('-pub_date')[:5]
-        return queryset
+def index(request):
+    last_posts = Post.objects.select_related('category').filter(
+        pub_date__lte=timezone.now(),
+        is_published=True,
+        category__is_published=True
+    ).order_by('-pub_date')[:5]
+    return render(request, 'blog/index.html', {'post_list': last_posts})
 
 
-class PostDetail(DetailView):
-    template_name = "blog/detail.html"
-    context_object_name = 'post'
-
-    def get_object(self):
-        return get_object_or_404(
-            Post,
-            id=self.kwargs['pk'],
-            is_published=True,
-            category_id__is_published=True,
-            pub_date__lte=dt.datetime.now()
-        )
+def post_detail(request, id):
+    post = Post.objects.select_related('category').filter(
+        pub_date__lte=timezone.now(),
+        is_published=True,
+        category__is_published=True,
+        pk=id,
+    ).first()
+    if not post:
+        raise Http404()
+    return render(request, 'blog/detail.html', {'post': post})
 
 
-class CategoryPosts(ListView):
-    template_name = "blog/category.html"
-    model = Post
-
-    def get_context_data(self, **kwargs):
-        context = {}
-        category_slug = self.kwargs['pk']
-        context['post_list'] = get_list_or_404(
-            Post,
-            category_id__slug=category_slug,
-            is_published=True
-        )
-        context['category'] = get_object_or_404(
-            Category,
-            slug=category_slug,
-            is_published=True
-        )
-        return context
+def category_posts(request, category_slug):
+    category_queryset = Post.objects.select_related('category').filter(
+        pub_date__lte=timezone.now(),
+        is_published=True,
+        category__is_published=True,
+        category__slug=category_slug,
+    ).order_by('-pub_date')
+    print(category_queryset.query)
+    if not category_queryset:
+        raise Http404()
+    category = get_object_or_404(Category, slug=category_slug)
+    return render(
+        request,
+        'blog/category.html',
+        {'category': category, 'post_list': category_queryset}
+    )
